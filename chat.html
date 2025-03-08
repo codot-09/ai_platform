@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat | AI Assistant</title>
+    <style>
+        body {
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f7;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: linear-gradient(135deg, #6a11cb, #2575fc);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            flex-shrink: 0;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        .sidebar h2 {
+            margin: 0 0 15px;
+            font-weight: 600;
+        }
+        
+        .add-session {
+            padding: 12px;
+            margin-bottom: 12px;
+            background: linear-gradient(45deg, #ff4b2b, #ff416c);
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s ease, box-shadow 0.3s ease;
+        }
+        
+        .add-session:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 10px rgba(255, 75, 43, 0.3);
+        }
+        
+        .session-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        
+        .session {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s;
+        }
+        
+        .session:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.03);
+        }
+        
+        .session.active {
+            background: #ff4b2b;
+            color: white;
+        }
+        
+        .chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message {
+            padding: 14px;
+            margin: 5px 0;
+            border-radius: 12px;
+            max-width: 60%;
+            font-size: 14px;
+            transition: all 0.3s ease-in-out;
+        }
+        
+        .user-message {
+            background: linear-gradient(45deg, #ff4b2b, #ff416c);
+            color: white;
+            align-self: flex-end;
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        }
+        
+        .bot-message {
+            background: #e9ecef;
+            color: black;
+            align-self: flex-start;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .loading {
+            color: #777;
+            font-size: 14px;
+            align-self: center;
+        }
+        
+        .message-input {
+            display: flex;
+            padding: 14px;
+            border-top: 1px solid #ddd;
+            background: #ffffff;
+            border-radius: 0 0 12px 12px;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.05);
+        }
+        
+        .message-input input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border 0.3s ease-in-out;
+        }
+        
+        .message-input input:focus {
+            border: 1px solid #007bff;
+            outline: none;
+        }
+        
+        .message-input button {
+            padding: 12px 20px;
+            background: linear-gradient(45deg, #ff6600, #ff3300);
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: transform 0.2s ease, box-shadow 0.3s ease;
+        }
+        
+        .message-input button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 10px rgba(255, 102, 0, 0.3);
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Sessions</h2>
+        <button class="add-session" id="new-session">+ New Session</button>
+        <div class="session-list" id="session-list"></div>
+    </div>
+    <div class="chat-container">
+        <div class="messages" id="messages"></div>
+        <div class="message-input">
+            <input type="text" id="message" placeholder="Type a message...">
+            <button id="send">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const apiBase = "http://192.168.100.13:8082/api/sessions";
+        const messagesApiBase = "http://192.168.100.13:8082/api/prompt";
+        const sessionList = document.getElementById("session-list");
+        const messagesContainer = document.getElementById("messages");
+        const messageInput = document.getElementById("message");
+        const sendButton = document.getElementById("send");
+        const token = localStorage.getItem("token");
+        let activeSessionId = null;
+
+        async function loadSessions() {
+            if (!token) {
+                alert("No token found! Please login.");
+                window.location.href = "login.html";
+                return;
+            }
+            try {
+                const response = await fetch(`${apiBase}/my-sessions`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await response.json();
+                sessionList.innerHTML = "";
+                if (data.data) {
+                    data.data.forEach(session => {
+                        const sessionDiv = document.createElement("div");
+                        sessionDiv.classList.add("session");
+                        sessionDiv.textContent = session.title;
+                        sessionDiv.setAttribute("data-id", session.sessionId);
+                        sessionDiv.addEventListener("click", () => {
+                            activeSessionId = session.sessionId;
+                            loadMessages(session.sessionId);
+                        });
+                        sessionList.appendChild(sessionDiv);
+                    });
+                } else {
+                    sessionList.innerHTML = "<p>No sessions found</p>";
+                }
+            } catch (error) { console.error("Error loading sessions", error); }
+        }
+
+        async function createSession() {
+            try {
+                const response = await fetch(`${apiBase}/new`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.data) loadSessions();
+                else alert("Failed to create session");
+            } catch (error) { console.error("Error creating session", error); }
+        }
+
+        async function loadMessages(sessionId) {
+            if (!sessionId) return;
+            messagesContainer.innerHTML = "<p class='loading'>Loading messages...</p>";
+            try {
+                const response = await fetch(`${messagesApiBase}/?sessionId=${sessionId}`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await response.json();
+                messagesContainer.innerHTML = "";
+                if (data.data) {
+                    data.data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    data.data.forEach(msg => displayMessage(cleanText(msg.text), msg.type));
+                } else {
+                    messagesContainer.innerHTML = "<p>No messages found</p>";
+                }
+            } catch (error) { console.error("Error loading messages:", error); }
+        }
+        
+        function displayMessage(text, type) {
+            const msgDiv = document.createElement("div");
+            msgDiv.classList.add("message", type === "REQUEST" ? "user-message" : "bot-message");
+            msgDiv.textContent = text;
+            messagesContainer.appendChild(msgDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function cleanText(text) {
+            return text.replace(/\n/g, " ").trim();
+        }
+        
+
+        async function sendMessage() {
+            if (!activeSessionId || !messageInput.value.trim()) return;
+
+            const userMessage = messageInput.value.trim();
+            messageInput.value = "";
+            displayMessage(userMessage, "REQUEST");
+
+            const loadingDiv = document.createElement("p");
+            loadingDiv.classList.add("loading");
+            loadingDiv.textContent = "Thinking...";
+            messagesContainer.appendChild(loadingDiv);
+
+            try {
+                const response = await fetch(`${messagesApiBase}/generate/${activeSessionId}`, {
+                    method: "POST",
+                    headers: { 
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ text: userMessage })
+                });
+
+                const reader = response.body.getReader();
+                let botMessage = document.createElement("div");
+                botMessage.classList.add("message", "bot-message");
+                messagesContainer.appendChild(botMessage);
+
+                async function readStream() {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        messagesContainer.removeChild(loadingDiv);
+                        return;
+                    }
+                    botMessage.textContent += new TextDecoder().decode(value);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    await readStream();
+                }
+                await readStream();
+
+            } catch (error) {
+                console.error("Error sending message:", error);
+                messagesContainer.removeChild(loadingDiv);
+            }
+        }
+
+        sendButton.addEventListener("click", sendMessage);
+        document.getElementById("new-session").addEventListener("click", createSession);
+
+        loadSessions();
+    </script>
+</body>
+</html>
